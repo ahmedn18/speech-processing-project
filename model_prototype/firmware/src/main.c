@@ -55,27 +55,27 @@ int main(void) {
     uart_write_text("Boot: UART OK\r\n");
     uart_write_reset_flags(g_reset_flags);
 
-    lcd_init();
+    LCD_Init();
     ridge_model_init();
     adc_capture_init();
 
     sei();
 
-    lcd_clear();
-    lcd_print("Speech Ready");
-    lcd_set_cursor(1, 0);
+    LCD_Clear();
+    LCD_String("Speech Ready");
+    LCD_Gotoxy(1, 0);
     if (ridge_model_uses_external()) {
-        lcd_print("Model:24C512");
+        LCD_String("Model:24C512");
         uart_write_text("Model source: 24C512 external EEPROM\r\n");
     } else {
-        lcd_print("Model:Flash");
+        LCD_String("Model:Flash");
         uart_write_text("Model source: internal flash fallback\r\n");
     }
     uart_write_text("Speech firmware ready\r\n");
 
     _delay_ms(600);
-    lcd_clear();
-    lcd_print("Listening...");
+    LCD_Clear();
+    LCD_String("Listening...");
 
     adc_capture_start();
 
@@ -93,17 +93,17 @@ int main(void) {
         int32_t margin_q = 0;
         int8_t predicted_label = ridge_predict(g_features_q, MODEL_REJECTION_MARGIN_Q, &margin_q);
 
-        lcd_clear();
+        LCD_Clear();
         if (predicted_label < 0) {
-            lcd_print("Unknown");
-            lcd_set_cursor(1, 0);
-            lcd_print("Try again");
+            LCD_String("Unknown");
+            LCD_Gotoxy(1, 0);
+            LCD_String("Try again");
             uart_write_text("Prediction: unknown\r\n");
         } else {
             ridge_copy_label((uint8_t) predicted_label, g_label_buffer, MODEL_LABEL_MAX_LEN);
-            lcd_print("Word:");
-            lcd_set_cursor(1, 0);
-            lcd_print(g_label_buffer);
+            LCD_String("Word:");
+            LCD_Gotoxy(1, 0);
+            LCD_String(g_label_buffer);
             uart_write_text("Prediction: ");
             uart_write_text(g_label_buffer);
             uart_write_text("\r\n");
