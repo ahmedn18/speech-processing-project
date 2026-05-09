@@ -34,14 +34,16 @@ static void lcd_command(uint8_t cmd) {
   _delay_ms(2);
 }
 
-void lcd_init(void) {
-
+void LCD_Init(void) {
   LCD_RS_DDR |= (1U << LCD_RS_PIN);
+  LCD_RW_DDR |= (1U << LCD_RW_PIN);
   LCD_EN_DDR |= (1U << LCD_EN_PIN);
   LCD_DATA_DDR |= (uint8_t)(0x0FU << LCD_DATA_SHIFT);
-  LCD_RS_PORT &= ~(1U << LCD_RS_PIN);
-  LCD_EN_PORT &= ~(1U << LCD_EN_PIN);
-  LCD_DATA_PORT &= ~(0x0F << LCD_DATA_SHIFT);
+
+  LCD_RS_PORT &= (uint8_t)~(1U << LCD_RS_PIN);
+  LCD_RW_PORT &= (uint8_t)~(1U << LCD_RW_PIN);
+  LCD_EN_PORT &= (uint8_t)~(1U << LCD_EN_PIN);
+  LCD_DATA_PORT &= (uint8_t)~(0x0FU << LCD_DATA_SHIFT);
 
   _delay_ms(40);
   LCD_RS_PORT &= (uint8_t)~(1U << LCD_RS_PIN);
@@ -53,25 +55,92 @@ void lcd_init(void) {
   lcd_write_nibble(0x03U);
   lcd_write_nibble(0x02U);
 
-  lcd_command(0x28U);
-  lcd_command(0x0CU);
-  lcd_command(0x06U);
-  lcd_clear();
+  lcd_command(LCD_FUNCTION_SET_4BIT);
+  lcd_command(LCD_DISPLAY_ON);
+  lcd_command(LCD_ENTRY_MODE_SET);
+  LCD_Clear();
 }
 
-void lcd_clear(void) {
-  lcd_command(0x01U);
-  _delay_ms(2);
-}
-
-void lcd_set_cursor(uint8_t row, uint8_t col) {
-  uint8_t offset = (row == 0U) ? 0x00U : 0x40U;
-  lcd_command((uint8_t)(0x80U | (offset + col)));
-}
-
-void lcd_print(const char *text) {
-  while (*text != '\0') {
-    lcd_send((uint8_t)*text, 1U);
-    text++;
+void LCD_Command(unsigned char cmd) {
+  lcd_command(cmd);
+  if (cmd == LCD_CLEAR_DISPLAY || cmd == LCD_RETURN_HOME) {
+    _delay_ms(2);
   }
+}
+
+void LCD_Char(unsigned char data) {
+  lcd_send(data, 1U);
+}
+
+void LCD_String(char *str) {
+  while (*str != '\0') {
+    LCD_Char((unsigned char)*str);
+    str++;
+  }
+}
+
+void LCD_String_xy(char row, char pos, char *str) {
+  LCD_Gotoxy(row, pos);
+  LCD_String(str);
+}
+
+void LCD_Clear(void) {
+  LCD_Command(LCD_CLEAR_DISPLAY);
+}
+
+void LCD_Create_Char(unsigned char address, unsigned char pattern[]) {
+  address &= 0x07U;
+
+  LCD_Command((unsigned char)(LCD_SET_CGRAM_ADDR | (address << 3)));
+  for (uint8_t i = 0; i < 8; i++) {
+    LCD_Char(pattern[i]);
+  }
+
+  LCD_Command(LCD_SET_DDRAM_ADDR);
+}
+
+void LCD_Gotoxy(char row, char pos) {
+  unsigned char address;
+
+  if (row == 0) {
+    address = (unsigned char)(LCD_ROW0_ADDR + (unsigned char)pos);
+  } else {
+    address = (unsigned char)(LCD_ROW1_ADDR + (unsigned char)pos);
+  }
+
+  LCD_Command((unsigned char)(LCD_SET_DDRAM_ADDR | address));
+}
+
+unsigned char LCD_Read_Char(unsigned char address) {
+  unsigned char data = 0;
+
+  LCD_Command((unsigned char)(LCD_SET_DDRAM_ADDR | address));
+
+  LCD_DATA_DDR &= (uint8_t)~(0x0FU << LCD_DATA_SHIFT);
+  LCD_DATA_PORT |= (uint8_t)(0x0FU << LCD_DATA_SHIFT);
+
+  LCD_RS_PORT |= (1U << LCD_RS_PIN);
+  LCD_RW_PORT |= (1U << LCD_RW_PIN);
+
+  LCD_EN_PORT |= (1U << LCD_EN_PIN);
+  _delay_us(1);
+  if (LCD_DATA_PIN & (1U << (LCD_DATA_SHIFT + 3U))) data |= 0x80U;
+  if (LCD_DATA_PIN & (1U << (LCD_DATA_SHIFT + 2U))) data |= 0x40U;
+  if (LCD_DATA_PIN & (1U << (LCD_DATA_SHIFT + 1U))) data |= 0x20U;
+  if (LCD_DATA_PIN & (1U << LCD_DATA_SHIFT)) data |= 0x10U;
+  LCD_EN_PORT &= (uint8_t)~(1U << LCD_EN_PIN);
+  _delay_us(1);
+
+  LCD_EN_PORT |= (1U << LCD_EN_PIN);
+  _delay_us(1);
+  if (LCD_DATA_PIN & (1U << (LCD_DATA_SHIFT + 3U))) data |= 0x08U;
+  if (LCD_DATA_PIN & (1U << (LCD_DATA_SHIFT + 2U))) data |= 0x04U;
+  if (LCD_DATA_PIN & (1U << (LCD_DATA_SHIFT + 1U))) data |= 0x02U;
+  if (LCD_DATA_PIN & (1U << LCD_DATA_SHIFT)) data |= 0x01U;
+  LCD_EN_PORT &= (uint8_t)~(1U << LCD_EN_PIN);
+
+  LCD_RW_PORT &= (uint8_t)~(1U << LCD_RW_PIN);
+  LCD_DATA_DDR |= (uint8_t)(0x0FU << LCD_DATA_SHIFT);
+
+  return data;
 }
