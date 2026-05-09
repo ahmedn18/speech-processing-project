@@ -123,6 +123,35 @@ static int32_t fixed_log2_q8(uint32_t value) {
     return ((int32_t) integer_part * (int32_t) MODEL_QUANT_SCALE) + (int32_t) (frac_q15 >> 7);
 }
 
+static void compute_frame_mfcc_q8(
+    const uint8_t *samples,
+    uint16_t length,
+    uint16_t frame_start,
+    int32_t mfcc_q8[MFCC_COUNT]
+) {
+    uint8_t c;
+    uint8_t band;
+
+    for (c = 0; c < MFCC_COUNT; c++) {
+        mfcc_q8[c] = 0;
+    }
+
+    for (band = 0; band < MEL_BAND_COUNT; band++) {
+        int16_t coeff_q14 = (int16_t) pgm_read_word(&k_goertzel_coeff_q14[band]);
+        uint32_t power = goertzel_power(samples, length, frame_start, coeff_q14);
+        int32_t log_q8 = fixed_log2_q8(power);
+
+        for (c = 0; c < MFCC_COUNT; c++) {
+            int16_t dct_q14 = (int16_t) pgm_read_word(&k_dct_q14[c][band]);
+            mfcc_q8[c] += (int32_t) dct_q14 * log_q8;
+        }
+    }
+
+    for (c = 0; c < MFCC_COUNT; c++) {
+        mfcc_q8[c] >>= DCT_Q_SHIFT;
+    }
+}
+
 void feature_extractor_compute(
     const uint8_t *samples,
     uint16_t length,
@@ -130,8 +159,7 @@ void feature_extractor_compute(
 ) {
     uint8_t c;
     uint16_t frame_count;
-    int64_t mfcc_sum[MFCC_COUNT];
-    uint64_t mfcc_sum_sq[MFCC_COUNT];
+    int32_t frame_mfcc_q8[MFCC_COUNT];
 
     for (c = 0; c < MODEL_FEATURE_DIM; c++) {
         feature_q[c] = 0;
@@ -139,11 +167,6 @@ void feature_extractor_compute(
 
     if (samples == NULL || length == 0U) {
         return;
-    }
-
-    for (c = 0; c < MFCC_COUNT; c++) {
-        mfcc_sum[c] = 0;
-        mfcc_sum_sq[c] = 0;
     }
 
     if (length <= FRAME_LENGTH) {
@@ -157,44 +180,37 @@ void feature_extractor_compute(
         uint16_t frame_index;
         for (frame_index = 0; frame_index < frame_count; frame_index++) {
             uint16_t frame_start = (uint16_t) (frame_index * HOP_LENGTH);
-            int32_t log_bands_q8[MEL_BAND_COUNT];
-            uint8_t band;
-
-            for (band = 0; band < MEL_BAND_COUNT; band++) {
-                int16_t coeff_q14 = (int16_t) pgm_read_word(&k_goertzel_coeff_q14[band]);
-                uint32_t power = goertzel_power(samples, length, frame_start, coeff_q14);
-                log_bands_q8[band] = fixed_log2_q8(power);
-            }
+            compute_frame_mfcc_q8(samples, length, frame_start, frame_mfcc_q8);
 
             for (c = 0; c < MFCC_COUNT; c++) {
-                int64_t acc = 0;
-                for (band = 0; band < MEL_BAND_COUNT; band++) {
-                    int16_t dct_q14 = (int16_t) pgm_read_word(&k_dct_q14[c][band]);
-                    acc += (int64_t) dct_q14 * log_bands_q8[band];
-                }
-
-                {
-                    int32_t mfcc_q8 = (int32_t) (acc >> DCT_Q_SHIFT);
-                    mfcc_sum[c] += mfcc_q8;
-                    mfcc_sum_sq[c] += (uint64_t) ((int64_t) mfcc_q8 * mfcc_q8);
-                }
+                feature_q[c] += frame_mfcc_q8[c];
             }
         }
     }
 
     for (c = 0; c < MFCC_COUNT; c++) {
-        int32_t mean_q8 = (int32_t) (mfcc_sum[c] / frame_count);
-        int64_t mean_sq_q16 = (int64_t) mean_q8 * mean_q8;
-        int64_t var_q16 = (int64_t) (mfcc_sum_sq[c] / frame_count) - mean_sq_q16;
-        uint32_t std_q8;
+        feature_q[c] /= frame_count;
+    }
 
-        if (var_q16 < 0) {
-            var_q16 = 0;
+    {
+        uint16_t frame_index;
+        for (frame_index = 0; frame_index < frame_count; frame_index++) {
+            uint16_t frame_start = (uint16_t) (frame_index * HOP_LENGTH);
+            compute_frame_mfcc_q8(samples, length, frame_start, frame_mfcc_q8);
+
+            for (c = 0; c < MFCC_COUNT; c++) {
+                int64_t delta_q8 = (int64_t) frame_mfcc_q8[c] - feature_q[c];
+                feature_q[c + MFCC_COUNT] += (int32_t) ((delta_q8 * delta_q8) >> 4);
+            }
         }
+    }
 
-        std_q8 = integer_sqrt_u64((uint64_t) var_q16);
+    for (c = 0; c < MFCC_COUNT; c++) {
+        uint32_t std_q8;
+        uint64_t var_q16 = ((uint64_t) (uint32_t) feature_q[c + MFCC_COUNT] << 4) / frame_count;
 
-        feature_q[c] = mean_q8;
+        std_q8 = integer_sqrt_u64(var_q16);
+
         feature_q[c + MFCC_COUNT] = (int32_t) std_q8;
     }
 }

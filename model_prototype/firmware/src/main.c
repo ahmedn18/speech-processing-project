@@ -1,4 +1,6 @@
 #include <avr/interrupt.h>
+#include <avr/io.h>
+#include <avr/wdt.h>
 #include <util/delay.h>
 
 #include "adc_capture.h"
@@ -8,12 +10,50 @@
 #include "ridge_inference.h"
 #include "uart.h"
 
+#if defined(MCUSR)
+#define RESET_STATUS_REG MCUSR
+#elif defined(MCUCSR)
+#define RESET_STATUS_REG MCUCSR
+#else
+#error "Unsupported AVR reset status register"
+#endif
+
 static int32_t g_features_q[MODEL_FEATURE_DIM];
 static char g_label_buffer[MODEL_LABEL_MAX_LEN];
+static uint8_t g_reset_flags __attribute__((section(".noinit")));
+
+void capture_reset_flags(void) __attribute__((naked, used, section(".init3")));
+
+void capture_reset_flags(void) {
+    g_reset_flags = RESET_STATUS_REG;
+    RESET_STATUS_REG = 0U;
+    wdt_disable();
+}
+
+static void uart_write_reset_flags(uint8_t flags) {
+    uart_write_text("Reset cause:");
+    if (flags == 0U) {
+        uart_write_text(" none");
+    }
+    if (flags & (1U << PORF)) {
+        uart_write_text(" POR");
+    }
+    if (flags & (1U << EXTRF)) {
+        uart_write_text(" EXT");
+    }
+    if (flags & (1U << BORF)) {
+        uart_write_text(" BOR");
+    }
+    if (flags & (1U << WDRF)) {
+        uart_write_text(" WDT");
+    }
+    uart_write_text("\r\n");
+}
 
 int main(void) {
     uart_init(UART_BAUDRATE);
     uart_write_text("Boot: UART OK\r\n");
+    uart_write_reset_flags(g_reset_flags);
 
     lcd_init();
     ridge_model_init();
