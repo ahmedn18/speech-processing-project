@@ -12,8 +12,10 @@ static int32_t g_features_q[MODEL_FEATURE_DIM];
 static char g_label_buffer[MODEL_LABEL_MAX_LEN];
 
 int main(void) {
-    lcd_init();
     uart_init(UART_BAUDRATE);
+    uart_write_text("Boot: UART OK\r\n");
+
+    lcd_init();
     ridge_model_init();
     adc_capture_init();
 

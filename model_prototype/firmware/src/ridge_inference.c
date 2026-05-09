@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <stddef.h>
 
+#include "config.h"
 #include "eeprom24c512.h"
 
 #define MODEL_EEPROM_MAGIC_0 'S'
@@ -145,6 +146,7 @@ static int32_t standardize_feature_q(int32_t raw_q, uint8_t feature_index) {
 }
 
 void ridge_model_init(void) {
+#if MODEL_ENABLE_EXTERNAL_EEPROM
     uint8_t header[MODEL_EEPROM_HEADER_BYTES];
     uint8_t block[16];
     uint16_t remaining;
@@ -223,6 +225,9 @@ void ridge_model_init(void) {
     }
 
     g_use_external_model = 1U;
+#else
+    g_use_external_model = 0U;
+#endif
 }
 
 uint8_t ridge_model_uses_external(void) {
