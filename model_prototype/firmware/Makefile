@@ -1,5 +1,5 @@
 MCU := atmega32a
-F_CPU := 16000000UL
+F_CPU := 8000000UL
 TARGET := firmware
 
 CC := avr-gcc

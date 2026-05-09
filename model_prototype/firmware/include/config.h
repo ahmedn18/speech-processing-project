@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 #ifndef F_CPU
-#define F_CPU 16000000UL
+#define F_CPU 8000000UL
 #endif
 
 #define ADC_INPUT_CHANNEL 0U
